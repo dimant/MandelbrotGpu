@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mandelbrot Explorer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a0a;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        #toolbar {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 8px 16px;
+            background: #1a1a2e;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+        #toolbar h1 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #7ecfff;
+            margin-right: 8px;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .control-group label {
+            font-size: 12px;
+            color: #aaa;
+        }
+        .control-group select,
+        .control-group input[type="number"] {
+            padding: 3px 6px;
+            background: #111;
+            border: 1px solid #444;
+            color: #e0e0e0;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        .control-group input[type="number"] {
+            width: 70px;
+        }
+        button {
+            padding: 4px 12px;
+            background: #2a4a7f;
+            color: #e0e0e0;
+            border: 1px solid #3a5a9f;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        button:hover { background: #3a5a9f; }
+        #status {
+            font-size: 11px;
+            color: #888;
+            margin-left: auto;
+        }
+        #canvas-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            cursor: crosshair;
+        }
+        #fractal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            image-rendering: pixelated;
+        }
+        #overlay {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            background: rgba(0,0,0,0.7);
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #aaa;
+            pointer-events: none;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 14px;
+            color: #7ecfff;
+            display: none;
+        }
+        #loading.active { display: block; }
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #7ecfff;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        #formula-panel {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 340px;
+            background: rgba(20, 20, 40, 0.95);
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 10px;
+            font-size: 12px;
+            z-index: 10;
+            display: none;
+        }
+        #formula-panel.open { display: block; }
+        #formula-panel h3 {
+            font-size: 13px;
+            color: #7ecfff;
+            margin-bottom: 6px;
+        }
+        #formula-panel .hint {
+            font-size: 10px;
+            color: #777;
+            margin-bottom: 6px;
+            line-height: 1.4;
+        }
+        #formula-editor {
+            width: 100%;
+            height: 80px;
+            background: #0d0d0d;
+            color: #d4d4d4;
+            border: 2px solid #444;
+            border-radius: 4px;
+            padding: 6px;
+            font-family: 'Consolas', 'Fira Code', monospace;
+            font-size: 12px;
+            resize: vertical;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        #formula-editor.valid { border-color: #4a4; }
+        #formula-editor.invalid { border-color: #a44; }
+        #formula-error {
+            font-size: 10px;
+            color: #f88;
+            margin-top: 4px;
+            min-height: 14px;
+            max-height: 60px;
+            overflow-y: auto;
+        }
+        #formula-panel .btn-row {
+            display: flex;
+            gap: 6px;
+            margin-top: 6px;
+        }
+        #formula-panel select {
+            padding: 3px 6px;
+            background: #111;
+            border: 1px solid #444;
+            color: #e0e0e0;
+            border-radius: 3px;
+            font-size: 11px;
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+    <div id="toolbar">
+        <h1>Mandelbrot Explorer</h1>
+        <div class="control-group">
+            <label>Fractal:</label>
+            <select id="fractalType">
+                <option value="0">Mandelbrot (z² + c)</option>
+                <option value="1">Burning Ship</option>
+                <option value="2">Tricorn</option>
+                <option value="3">Cubic (z³ + c)</option>
+                <option value="4">Quartic (z⁴ + c)</option>
+                <option value="5">Phoenix</option>
+                <option value="6">Celtic</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label>Iterations:</label>
+            <input type="number" id="maxIter" value="256" min="32" max="4096" step="64">
+        </div>
+        <div class="control-group">
+            <label>Zoom to:</label>
+            <select id="zoomTarget">
+                <option value="0">Seahorse Valley</option>
+                <option value="1">Lightning</option>
+                <option value="2">Spiral</option>
+                <option value="3">Mini Mandelbrot</option>
+                <option value="4">Elephant Valley</option>
+            </select>
+        </div>
+        <button id="btnAnimate">Animate Zoom</button>
+        <button id="btnFormula">Formula Editor</button>
+        <button id="btnReset">Reset View</button>
+        <button id="btnHiRes">Hi-Res Render</button>
+        <div id="status">Initializing...</div>
+    </div>
+    <div id="canvas-container">
+        <img id="fractal" alt="Mandelbrot set">
+        <div id="overlay"></div>
+        <div id="formula-panel">
+            <h3>Custom Formula</h3>
+            <div class="hint">
+                Variables: <b>x, y</b> (current z), <b>x0, y0</b> (c point), <b>prevX, prevY</b> (previous z)<br>
+                Set <b>xNew</b> and <b>yNew</b> for next iteration.<br>
+                Functions: Sin, Cos, Log, Log2, Exp, Sqrt, Abs, Pow, Tan, Atan2, PI — no prefix needed. Ctrl+Enter to compile.
+            </div>
+            <div class="btn-row">
+                <select id="formulaPresets">
+                    <option value="">-- Presets --</option>
+                    <option value="mandelbrot">Mandelbrot (z² + c)</option>
+                    <option value="burning">Burning Ship</option>
+                    <option value="tricorn">Tricorn</option>
+                    <option value="cubic">Cubic (z³ + c)</option>
+                    <option value="phoenix">Phoenix</option>
+                    <option value="celtic">Celtic</option>
+                    <option value="heart">Heart</option>
+                    <option value="buffalo">Buffalo</option>
+                </select>
+            </div>
+            <textarea id="formula-editor" spellcheck="false">xNew = x*x - y*y + x0;
+yNew = 2.0*x*y + y0;</textarea>
+            <div id="formula-error"></div>
+            <div class="btn-row">
+                <button id="btnCompile">Compile & Render</button>
+                <button id="btnResetKernel">Reset to Built-in</button>
+            </div>
+        </div>
+        <div id="loading"><span class="spinner"></span>Rendering...</div>
+    </div>
+
+    <script>
+        const img = document.getElementById('fractal');
+        const container = document.getElementById('canvas-container');
+        const overlay = document.getElementById('overlay');
+        const loading = document.getElementById('loading');
+        const status = document.getElementById('status');
+        const maxIterInput = document.getElementById('maxIter');
+        const fractalSelect = document.getElementById('fractalType');
+
+        let cx = -0.5, cy = 0.0, scale = 0.004;
+        let rendering = false;
+        let pendingRender = false;
+        let dragStart = null;
+        let pinch = null; // track pinch-to-zoom state
+        let animating = false;
+        let animationId = null;
+
+        const zoomTargets = [
+            { name: 'Seahorse Valley', cx: -0.7463, cy: 0.1102, endScale: 1e-6 },
+            { name: 'Lightning', cx: -1.315180982097868, cy: 0.073481649996795, endScale: 5e-8 },
+            { name: 'Spiral', cx: -0.7436439, cy: 0.1318259, endScale: 1e-7 },
+            { name: 'Mini Mandelbrot', cx: -1.768778833, cy: -0.001738996, endScale: 2e-7 },
+            { name: 'Elephant Valley', cx: 0.2821, cy: 0.0100, endScale: 5e-7 },
+        ];
+
+        // Fetch accelerator info
+        fetch('/api/info')
+            .then(r => r.json())
+            .then(info => {
+                status.textContent = `GPU: ${info.accelerator} (${info.type})`;
+            })
+            .catch(() => {
+                status.textContent = 'Connected';
+            });
+
+        function render(hiRes = false) {
+            if (rendering) { pendingRender = true; return; }
+            rendering = true;
+            loading.classList.add('active');
+
+            const w = hiRes ? container.clientWidth * 2 : container.clientWidth;
+            const h = hiRes ? container.clientHeight * 2 : container.clientHeight;
+            const maxIter = parseInt(maxIterInput.value) || 256;
+
+            const fractal = parseInt(fractalSelect.value) || 0;
+
+            const params = new URLSearchParams({
+                cx: cx, cy: cy, scale: scale,
+                width: Math.round(w), height: Math.round(h),
+                maxIter: maxIter,
+                fractal: fractal,
+                _t: Date.now()
+            });
+
+            const startTime = performance.now();
+
+            const newImg = new Image();
+            newImg.onload = () => {
+                img.src = newImg.src;
+                img.style.width = container.clientWidth + 'px';
+                img.style.height = container.clientHeight + 'px';
+
+                const elapsed = (performance.now() - startTime).toFixed(0);
+                overlay.textContent = `Center: (${cx.toFixed(12)}, ${cy.toFixed(12)}) | Scale: ${scale.toExponential(3)} | ${w}×${h} | ${elapsed}ms`;
+
+                loading.classList.remove('active');
+                rendering = false;
+                if (pendingRender) {
+                    pendingRender = false;
+                    render();
+                }
+            };
+            newImg.onerror = () => {
+                loading.classList.remove('active');
+                rendering = false;
+            };
+            newImg.src = `/api/render?${params}`;
+        }
+
+        // Stop animation on manual interaction
+        function stopAnimation() {
+            if (animating) { cancelAnimationFrame(animationId); animating = false; }
+        }
+
+        // Mouse wheel zoom
+        container.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            stopAnimation();
+            const rect = container.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+
+            // Zoom towards mouse position
+            const zoomFactor = e.deltaY > 0 ? 1.3 : 1 / 1.3;
+
+            const worldX = cx + (mx - rect.width / 2) * scale;
+            const worldY = cy + (my - rect.height / 2) * scale;
+
+            scale *= zoomFactor;
+
+            cx = worldX - (mx - rect.width / 2) * scale;
+            cy = worldY - (my - rect.height / 2) * scale;
+
+            render();
+        }, { passive: false });
+
+        // Click to center
+        container.addEventListener('mousedown', (e) => {
+            stopAnimation();
+            dragStart = { x: e.clientX, y: e.clientY, cx: cx, cy: cy };
+        });
+
+        container.addEventListener('mousemove', (e) => {
+            if (!dragStart) return;
+            const dx = e.clientX - dragStart.x;
+            const dy = e.clientY - dragStart.y;
+            cx = dragStart.cx - dx * scale;
+            cy = dragStart.cy - dy * scale;
+
+            // Move image for immediate feedback
+            img.style.transform = `translate(${dx}px, ${dy}px)`;
+        });
+
+        container.addEventListener('mouseup', (e) => {
+            if (!dragStart) return;
+            const dx = e.clientX - dragStart.x;
+            const dy = e.clientY - dragStart.y;
+            img.style.transform = '';
+            dragStart = null;
+
+            if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+                render();
+            }
+        });
+
+        container.addEventListener('mouseleave', () => {
+            if (dragStart) {
+                img.style.transform = '';
+                dragStart = null;
+                render();
+            }
+        });
+
+        // Touch: pinch to zoom + drag to pan
+        function getTouchDistance(t1, t2) {
+            const dx = t1.clientX - t2.clientX;
+            const dy = t1.clientY - t2.clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function getTouchCenter(t1, t2) {
+            return {
+                x: (t1.clientX + t2.clientX) / 2,
+                y: (t1.clientY + t2.clientY) / 2
+            };
+        }
+
+        container.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (e.touches.length === 2) {
+                // Start pinch
+                dragStart = null;
+                const t1 = e.touches[0], t2 = e.touches[1];
+                const center = getTouchCenter(t1, t2);
+                const rect = container.getBoundingClientRect();
+                pinch = {
+                    dist: getTouchDistance(t1, t2),
+                    centerX: center.x - rect.left,
+                    centerY: center.y - rect.top,
+                    startCx: cx,
+                    startCy: cy,
+                    startScale: scale
+                };
+            } else if (e.touches.length === 1) {
+                // Start single-finger drag
+                pinch = null;
+                const t = e.touches[0];
+                dragStart = { x: t.clientX, y: t.clientY, cx: cx, cy: cy };
+            }
+        }, { passive: false });
+
+        container.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (e.touches.length === 2 && pinch) {
+                const t1 = e.touches[0], t2 = e.touches[1];
+                const newDist = getTouchDistance(t1, t2);
+                const newCenter = getTouchCenter(t1, t2);
+                const rect = container.getBoundingClientRect();
+
+                const zoomFactor = pinch.dist / newDist;
+
+                // World point under the original pinch center
+                const worldX = pinch.startCx + (pinch.centerX - rect.width / 2) * pinch.startScale;
+                const worldY = pinch.startCy + (pinch.centerY - rect.height / 2) * pinch.startScale;
+
+                scale = pinch.startScale * zoomFactor;
+
+                // Pan: offset by finger movement
+                const ncx = newCenter.x - rect.left;
+                const ncy = newCenter.y - rect.top;
+
+                cx = worldX - (ncx - rect.width / 2) * scale;
+                cy = worldY - (ncy - rect.height / 2) * scale;
+
+                // Visual feedback: transform the image
+                const s = pinch.dist / newDist;
+                const dx = ncx - pinch.centerX;
+                const dy = ncy - pinch.centerY;
+                img.style.transformOrigin = `${pinch.centerX}px ${pinch.centerY}px`;
+                img.style.transform = `translate(${dx}px, ${dy}px) scale(${1 / s})`;
+            } else if (e.touches.length === 1 && dragStart) {
+                const t = e.touches[0];
+                const dx = t.clientX - dragStart.x;
+                const dy = t.clientY - dragStart.y;
+                cx = dragStart.cx - dx * scale;
+                cy = dragStart.cy - dy * scale;
+                img.style.transform = `translate(${dx}px, ${dy}px)`;
+            }
+        }, { passive: false });
+
+        container.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            if (pinch || dragStart) {
+                img.style.transform = '';
+                img.style.transformOrigin = '';
+                pinch = null;
+                dragStart = null;
+                render();
+            }
+        }, { passive: false });
+
+        // Double-click to zoom in
+        container.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            const rect = container.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+            cx += (mx - rect.width / 2) * scale;
+            cy += (my - rect.height / 2) * scale;
+            scale /= 2;
+            render();
+        });
+
+        // Animated zoom
+        function animateZoom(target) {
+            if (animating) {
+                cancelAnimationFrame(animationId);
+                animating = false;
+            }
+
+            const startCx = -0.5, startCy = 0.0, startScale = 0.004;
+            const endCx = target.cx, endCy = target.cy, endScale = target.endScale;
+            const startTime = performance.now();
+            const duration = 12000; // 12 seconds
+
+            cx = startCx; cy = startCy; scale = startScale;
+            animating = true;
+
+            function step() {
+                if (!animating) return;
+
+                const elapsed = performance.now() - startTime;
+                const rawT = Math.min(elapsed / duration, 1.0);
+                // Ease in-out for smooth feel
+                const t = rawT < 0.5
+                    ? 2 * rawT * rawT
+                    : 1 - Math.pow(-2 * rawT + 2, 2) / 2;
+
+                // Interpolate scale exponentially (log-space)
+                const logStart = Math.log(startScale);
+                const logEnd = Math.log(endScale);
+                scale = Math.exp(logStart + (logEnd - logStart) * t);
+
+                // Delay center panning until zoomed in — keeps view on the
+                // boundary instead of drifting into the black interior
+                const centerT = t * t * t;
+                cx = startCx + (endCx - startCx) * centerT;
+                cy = startCy + (endCy - startCy) * centerT;
+
+                if (!rendering) {
+                    render();
+                }
+
+                if (rawT < 1.0) {
+                    animationId = requestAnimationFrame(step);
+                } else {
+                    animating = false;
+                }
+            }
+
+            step();
+        }
+
+        document.getElementById('btnAnimate').addEventListener('click', () => {
+            const idx = parseInt(document.getElementById('zoomTarget').value) || 0;
+            animateZoom(zoomTargets[idx]);
+        });
+
+        // Buttons
+        document.getElementById('btnReset').addEventListener('click', () => {
+            if (animating) { cancelAnimationFrame(animationId); animating = false; }
+            cx = -0.5; cy = 0.0; scale = 0.004;
+            render();
+        });
+
+        document.getElementById('btnHiRes').addEventListener('click', () => {
+            render(true);
+        });
+
+        maxIterInput.addEventListener('change', () => render());
+        fractalSelect.addEventListener('change', async () => {
+            await fetch('/api/reset-kernel', { method: 'POST' });
+            render();
+        });
+
+        // Formula editor
+        const formulaPanel = document.getElementById('formula-panel');
+        const formulaEditor = document.getElementById('formula-editor');
+        const formulaError = document.getElementById('formula-error');
+        const formulaPresets = document.getElementById('formulaPresets');
+
+        document.getElementById('btnFormula').addEventListener('click', () => {
+            formulaPanel.classList.toggle('open');
+        });
+
+        const presetFormulas = {
+            mandelbrot: 'xNew = x*x - y*y + x0;\nyNew = 2.0*x*y + y0;',
+            burning:    'double ax = x < 0 ? -x : x;\ndouble ay = y < 0 ? -y : y;\nxNew = ax*ax - ay*ay + x0;\nyNew = 2.0*ax*ay + y0;',
+            tricorn:    'xNew = x*x - y*y + x0;\nyNew = -2.0*x*y + y0;',
+            cubic:      'double x2 = x*x;\ndouble y2 = y*y;\nxNew = x*x2 - 3.0*x*y2 + x0;\nyNew = 3.0*x2*y - y*y2 + y0;',
+            phoenix:    'xNew = x*x - y*y + x0 + y0*prevX;\nyNew = 2.0*x*y + y0*prevY;',
+            celtic:     'double re2 = x*x - y*y;\nxNew = (re2 < 0 ? -re2 : re2) + x0;\nyNew = 2.0*x*y + y0;',
+            heart:      'double ax = x < 0 ? -x : x;\nxNew = x*x - y*y + x0;\nyNew = 2.0*ax*y + y0;',
+            buffalo:    'double ax = x*x - y*y;\nxNew = (ax < 0 ? -ax : ax) + x0;\ndouble bx = 2.0*x*y;\nyNew = (bx < 0 ? -bx : bx) + y0;',
+        };
+
+        formulaPresets.addEventListener('change', () => {
+            const key = formulaPresets.value;
+            if (key && presetFormulas[key]) {
+                formulaEditor.value = presetFormulas[key];
+                validateFormula();
+            }
+        });
+
+        // Client-side validation
+        function validateFormula() {
+            const code = formulaEditor.value;
+            const errors = [];
+
+            // Check balanced parens/braces
+            let depth = 0;
+            for (const ch of code) {
+                if (ch === '(' || ch === '{') depth++;
+                if (ch === ')' || ch === '}') depth--;
+                if (depth < 0) { errors.push('Unmatched closing bracket'); break; }
+            }
+            if (depth > 0) errors.push('Unclosed bracket');
+
+            // Must assign xNew and yNew
+            if (!/\bxNew\s*=/.test(code)) errors.push('Must assign xNew');
+            if (!/\byNew\s*=/.test(code)) errors.push('Must assign yNew');
+
+            // Check for disallowed patterns
+            const banned = /\b(System\.|File\.|Process\.|Assembly|Reflection|using |class |namespace )\b/;
+            if (banned.test(code)) errors.push('Disallowed keyword detected');
+
+            // Allowed identifiers
+            const allowed = /^[a-zA-Z_][a-zA-Z0-9_.]*$/;
+            const tokens = code.match(/[a-zA-Z_][a-zA-Z0-9_.]*/g) || [];
+            const validIdents = new Set([
+                'x', 'y', 'x0', 'y0', 'xNew', 'yNew', 'prevX', 'prevY',
+                'double', 'int', 'float', 'var', 'Math',
+                'Abs', 'Sin', 'Cos', 'Tan', 'Sqrt', 'Log', 'Log2', 'Exp', 'Pow',
+                'PI', 'E', 'Max', 'Min', 'Floor', 'Ceiling', 'Round',
+                'ax', 'ay', 'bx', 'by', 're2', 'im2', 'x2', 'y2', 'x2y2',
+                'r', 'a', 'b', 'c', 'd', 't', 'u', 'v', 'w', 'tmp', 'temp',
+            ]);
+
+            if (errors.length === 0) {
+                formulaEditor.classList.remove('invalid');
+                formulaEditor.classList.add('valid');
+                formulaError.textContent = '';
+            } else {
+                formulaEditor.classList.remove('valid');
+                formulaEditor.classList.add('invalid');
+                formulaError.textContent = errors.join('; ');
+            }
+
+            return errors.length === 0;
+        }
+
+        formulaEditor.addEventListener('input', validateFormula);
+
+        // Compile
+        document.getElementById('btnCompile').addEventListener('click', async () => {
+            if (!validateFormula()) return;
+
+            formulaError.textContent = 'Compiling...';
+            formulaError.style.color = '#7ecfff';
+
+            try {
+                const resp = await fetch('/api/compile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: formulaEditor.value })
+                });
+                const result = await resp.json();
+
+                if (result.success) {
+                    formulaError.textContent = 'Compiled! Rendering...';
+                    formulaError.style.color = '#4a4';
+                    render();
+                } else {
+                    formulaError.style.color = '#f88';
+                    formulaError.textContent = result.errors.join('\n');
+                    formulaEditor.classList.remove('valid');
+                    formulaEditor.classList.add('invalid');
+                }
+            } catch (err) {
+                formulaError.style.color = '#f88';
+                formulaError.textContent = 'Request failed: ' + err.message;
+            }
+        });
+
+        // Reset to built-in kernel
+        document.getElementById('btnResetKernel').addEventListener('click', async () => {
+            await fetch('/api/reset-kernel', { method: 'POST' });
+            formulaError.textContent = 'Reset to built-in kernel';
+            formulaError.style.color = '#7ecfff';
+            render();
+        });
+
+        // Ctrl+Enter to compile
+        formulaEditor.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'Enter') {
+                e.preventDefault();
+                document.getElementById('btnCompile').click();
+            }
+        });
+
+        validateFormula();
+
+        // Initial render — reset to built-in kernel on page load
+        window.addEventListener('resize', () => render());
+        fetch('/api/reset-kernel', { method: 'POST' }).then(() => render());
+    </script>
+</body>
+</html>
