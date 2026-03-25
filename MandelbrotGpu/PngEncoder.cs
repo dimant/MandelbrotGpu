@@ -7,7 +7,7 @@ namespace MandelbrotGpu;
 /// </summary>
 public static class PngEncoder
 {
-    public static byte[] Encode(double[] iterations, int width, int height, int maxIterations)
+    public static byte[] Encode(double[] iterations, int width, int height, int maxIterations, int paletteIndex = 0)
     {
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms);
@@ -39,7 +39,7 @@ public static class PngEncoder
                     for (int x = 0; x < width; x++)
                     {
                         double iter = iterations[y * width + x];
-                        var (r, g, b) = Palette.Map(iter, maxIterations);
+                        var (r, g, b) = Palette.Map(iter, maxIterations, paletteIndex);
                         deflate.WriteByte(r);
                         deflate.WriteByte(g);
                         deflate.WriteByte(b);
@@ -54,7 +54,7 @@ public static class PngEncoder
             writer.Write(deflateData);
 
             // Compute Adler-32 over uncompressed data
-            uint adler = ComputeAdler32(iterations, width, height, maxIterations);
+            uint adler = ComputeAdler32(iterations, width, height, maxIterations, paletteIndex);
             writer.WriteBE((int)adler);
         });
 
@@ -64,7 +64,7 @@ public static class PngEncoder
         return ms.ToArray();
     }
 
-    private static uint ComputeAdler32(double[] iterations, int width, int height, int maxIterations)
+    private static uint ComputeAdler32(double[] iterations, int width, int height, int maxIterations, int paletteIndex = 0)
     {
         uint a = 1, b = 0;
         for (int y = 0; y < height; y++)
@@ -75,7 +75,7 @@ public static class PngEncoder
             for (int x = 0; x < width; x++)
             {
                 double iter = iterations[y * width + x];
-                var (rv, gv, bv) = Palette.Map(iter, maxIterations);
+                var (rv, gv, bv) = Palette.Map(iter, maxIterations, paletteIndex);
                 a = (a + rv) % 65521; b = (b + a) % 65521;
                 a = (a + gv) % 65521; b = (b + a) % 65521;
                 a = (a + bv) % 65521; b = (b + a) % 65521;

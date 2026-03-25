@@ -113,6 +113,14 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
+        #select-rect {
+            position: absolute;
+            border: 2px solid rgba(126, 207, 255, 0.8);
+            background: rgba(126, 207, 255, 0.1);
+            pointer-events: none;
+            display: none;
+            z-index: 5;
+        }
         #formula-panel {
             position: absolute;
             top: 8px;
@@ -194,6 +202,18 @@
             </select>
         </div>
         <div class="control-group">
+            <label>Palette:</label>
+            <select id="paletteSelect">
+                <option value="0">Midnight</option>
+                <option value="1">Ember</option>
+                <option value="2">Ocean</option>
+                <option value="3">Amethyst</option>
+                <option value="4">Verdant</option>
+                <option value="5">Infrared</option>
+                <option value="6">Grayscale</option>
+            </select>
+        </div>
+        <div class="control-group">
             <label>Iterations:</label>
             <input type="number" id="maxIter" value="256" min="32" max="4096" step="64">
         </div>
@@ -211,10 +231,21 @@
         <button id="btnFormula">Formula Editor</button>
         <button id="btnReset">Reset View</button>
         <button id="btnHiRes">Hi-Res Render</button>
+        <div class="control-group">
+            <select id="downloadRes">
+                <option value="viewport">Viewport</option>
+                <option value="1280x720">720p</option>
+                <option value="1920x1080" selected>1080p</option>
+                <option value="2560x1440">1440p</option>
+                <option value="3840x2160">4K</option>
+            </select>
+            <button id="btnDownload">Download PNG</button>
+        </div>
         <div id="status">Initializing...</div>
     </div>
     <div id="canvas-container">
-        <img id="fractal" alt="Mandelbrot set">
+        <img id="fractal" alt="Mandelbrot set" draggable="false">
+        <div id="select-rect"></div>
         <div id="overlay"></div>
         <div id="formula-panel">
             <h3>Custom Formula</h3>
@@ -255,6 +286,7 @@ yNew = 2.0*x*y + y0;</textarea>
         const status = document.getElementById('status');
         const maxIterInput = document.getElementById('maxIter');
         const fractalSelect = document.getElementById('fractalType');
+        const paletteSelect = document.getElementById('paletteSelect');
 
         let cx = -0.5, cy = 0.0, scale = 0.004;
         let rendering = false;
@@ -292,12 +324,14 @@ yNew = 2.0*x*y + y0;</textarea>
             const maxIter = parseInt(maxIterInput.value) || 256;
 
             const fractal = parseInt(fractalSelect.value) || 0;
+            const palette = parseInt(paletteSelect.value) || 0;
 
             const params = new URLSearchParams({
                 cx: cx, cy: cy, scale: scale,
                 width: Math.round(w), height: Math.round(h),
                 maxIter: maxIter,
                 fractal: fractal,
+                palette: palette,
                 _t: Date.now()
             });
 
@@ -353,32 +387,92 @@ yNew = 2.0*x*y + y0;</textarea>
             render();
         }, { passive: false });
 
-        // Click to center
+        // Prevent native image drag on macOS
+        img.addEventListener('dragstart', (e) => e.preventDefault());
+        container.addEventListener('selectstart', (e) => { if (dragStart || selectStart) e.preventDefault(); });
+
+        const selectRect = document.getElementById('select-rect');
+        let selectStart = null;
+
+        function isPan(e) {
+            return e.shiftKey || e.button === 1 || e.button === 2;
+        }
+
+        // Mouse down: start pan or rectangle select
         container.addEventListener('mousedown', (e) => {
+            if (e.target.closest('#formula-panel')) return;
+            e.preventDefault();
             stopAnimation();
-            dragStart = { x: e.clientX, y: e.clientY, cx: cx, cy: cy };
+
+            const rect = container.getBoundingClientRect();
+            if (isPan(e)) {
+                dragStart = { x: e.clientX, y: e.clientY, cx: cx, cy: cy };
+            } else if (e.button === 0) {
+                selectStart = {
+                    x: e.clientX - rect.left,
+                    y: e.clientY - rect.top,
+                    clientX: e.clientX,
+                    clientY: e.clientY
+                };
+            }
         });
 
         container.addEventListener('mousemove', (e) => {
-            if (!dragStart) return;
-            const dx = e.clientX - dragStart.x;
-            const dy = e.clientY - dragStart.y;
-            cx = dragStart.cx - dx * scale;
-            cy = dragStart.cy - dy * scale;
+            if (dragStart) {
+                // Pan with CSS transform for smooth feedback
+                const dx = e.clientX - dragStart.x;
+                const dy = e.clientY - dragStart.y;
+                cx = dragStart.cx - dx * scale;
+                cy = dragStart.cy - dy * scale;
+                img.style.transform = `translate(${dx}px, ${dy}px)`;
+            } else if (selectStart) {
+                // Rectangle zoom selection
+                const rect = container.getBoundingClientRect();
+                const curX = e.clientX - rect.left;
+                const curY = e.clientY - rect.top;
+                const x = Math.min(selectStart.x, curX);
+                const y = Math.min(selectStart.y, curY);
+                const w = Math.abs(curX - selectStart.x);
+                const h = Math.abs(curY - selectStart.y);
 
-            // Move image for immediate feedback
-            img.style.transform = `translate(${dx}px, ${dy}px)`;
+                if (w > 4 || h > 4) {
+                    selectRect.style.display = 'block';
+                    selectRect.style.left = x + 'px';
+                    selectRect.style.top = y + 'px';
+                    selectRect.style.width = w + 'px';
+                    selectRect.style.height = h + 'px';
+                }
+            }
         });
 
         container.addEventListener('mouseup', (e) => {
-            if (!dragStart) return;
-            const dx = e.clientX - dragStart.x;
-            const dy = e.clientY - dragStart.y;
-            img.style.transform = '';
-            dragStart = null;
-
-            if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+            if (dragStart) {
+                img.style.transform = '';
+                dragStart = null;
                 render();
+            } else if (selectStart) {
+                selectRect.style.display = 'none';
+                const rect = container.getBoundingClientRect();
+                const curX = e.clientX - rect.left;
+                const curY = e.clientY - rect.top;
+                const x1 = Math.min(selectStart.x, curX);
+                const y1 = Math.min(selectStart.y, curY);
+                const x2 = Math.max(selectStart.x, curX);
+                const y2 = Math.max(selectStart.y, curY);
+                const w = x2 - x1;
+                const h = y2 - y1;
+                selectStart = null;
+
+                if (w > 10 && h > 10) {
+                    // Zoom to selected rectangle
+                    const midX = (x1 + x2) / 2;
+                    const midY = (y1 + y2) / 2;
+                    cx = cx + (midX - rect.width / 2) * scale;
+                    cy = cy + (midY - rect.height / 2) * scale;
+                    // Scale so the selection fills the viewport
+                    scale *= Math.max(w / rect.width, h / rect.height);
+                    render();
+                }
             }
         });
 
@@ -388,7 +482,14 @@ yNew = 2.0*x*y + y0;</textarea>
                 dragStart = null;
                 render();
             }
+            if (selectStart) {
+                selectRect.style.display = 'none';
+                selectStart = null;
+            }
         });
+
+        // Disable context menu on canvas so right-drag works for pan
+        container.addEventListener('contextmenu', (e) => e.preventDefault());
 
         // Touch: pinch to zoom + drag to pan
         function getTouchDistance(t1, t2) {
@@ -556,7 +657,45 @@ yNew = 2.0*x*y + y0;</textarea>
             render(true);
         });
 
+        document.getElementById('btnDownload').addEventListener('click', () => {
+            const resSel = document.getElementById('downloadRes').value;
+            let w, h, dlScale;
+
+            if (resSel === 'viewport') {
+                w = container.clientWidth;
+                h = container.clientHeight;
+                dlScale = scale;
+            } else {
+                const [rw, rh] = resSel.split('x').map(Number);
+                w = rw;
+                h = rh;
+                // Adjust scale so the requested resolution fills with pixels
+                // matching the current viewport's world extent
+                const viewW = container.clientWidth;
+                const viewH = container.clientHeight;
+                const scaleFactorW = viewW / w;
+                const scaleFactorH = viewH / h;
+                // Use the smaller factor so we fill the larger dimension
+                dlScale = scale * Math.min(scaleFactorW, scaleFactorH);
+            }
+
+            const maxIter = parseInt(maxIterInput.value) || 256;
+            const fractal = parseInt(fractalSelect.value) || 0;
+            const palette = parseInt(paletteSelect.value) || 0;
+            const params = new URLSearchParams({
+                cx: cx, cy: cy, scale: dlScale,
+                width: w, height: h,
+                maxIter: maxIter, fractal: fractal, palette: palette,
+                _t: Date.now()
+            });
+            const a = document.createElement('a');
+            a.href = `/api/render?${params}`;
+            a.download = `fractal_${w}x${h}_${Date.now()}.png`;
+            a.click();
+        });
+
         maxIterInput.addEventListener('change', () => render());
+        paletteSelect.addEventListener('change', () => render());
         fractalSelect.addEventListener('change', async () => {
             await fetch('/api/reset-kernel', { method: 'POST' });
             render();

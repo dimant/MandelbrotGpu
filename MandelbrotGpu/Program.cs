@@ -17,15 +17,17 @@ app.MapGet("/api/render", (
     int width = 960,
     int height = 640,
     int maxIter = 256,
-    int fractal = 0) =>
+    int fractal = 0,
+    int palette = 0) =>
 {
     // Clamp dimensions to prevent abuse
     width = Math.Clamp(width, 64, 3840);
     height = Math.Clamp(height, 64, 2160);
     maxIter = Math.Clamp(maxIter, 32, 4096);
     fractal = Math.Clamp(fractal, 0, 6);
+    palette = Math.Clamp(palette, 0, Palette.PaletteCount - 1);
 
-    var png = renderer.RenderToPng(width, height, cx, cy, scale, maxIter, fractal);
+    var png = renderer.RenderToPng(width, height, cx, cy, scale, maxIter, fractal, palette);
     return Results.File(png, "image/png");
 });
 

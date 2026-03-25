@@ -142,10 +142,10 @@ public sealed class MandelbrotRenderer : IDisposable
     /// <summary>
     /// Renders to PNG bytes.
     /// </summary>
-    public byte[] RenderToPng(int width, int height, double centerX, double centerY, double scale, int maxIterations, int fractalType = 0)
+    public byte[] RenderToPng(int width, int height, double centerX, double centerY, double scale, int maxIterations, int fractalType = 0, int paletteIndex = 0)
     {
         var smoothIters = Render(width, height, centerX, centerY, scale, maxIterations, fractalType);
-        return PngEncoder.Encode(smoothIters, width, height, maxIterations);
+        return PngEncoder.Encode(smoothIters, width, height, maxIterations, paletteIndex);
     }
 
     private static (byte R, byte G, byte B) HsvToRgb(double h, double s, double v)
